@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/zhi-minn/dota-sketch-backend/internal/enums"
 	"github.com/zhi-minn/dota-sketch-backend/internal/models"
 	"github.com/zhi-minn/dota-sketch-backend/internal/services"
@@ -55,12 +56,13 @@ func (h *GameHandler) JoinGame(c *gin.Context) {
 		return
 	}
 
-	game.Players[nick] = &models.Player{
+	playerUid := uuid.New().String()
+	game.Players[playerUid] = &models.Player{
 		Nickname: nick,
 		Score:    0,
 		Role:     enums.PLAYER,
 	}
-	c.JSON(http.StatusOK, gin.H{"code": game.Code})
+	c.JSON(http.StatusOK, gin.H{"code": game.Code, "uid": playerUid})
 }
 
 func (h *GameHandler) LiveGamesHandler(c *gin.Context) {
