@@ -21,7 +21,9 @@ func main() {
 	r.GET("/metrics/live-games", gameHandler.LiveGamesHandler)
 
 	hub := ws.NewHub()
-	r.GET("/ws", ws.ServeWs(hub))
+	go hub.Run()
+	wsHandler := ws.NewWsHandler(gameService)
+	r.GET("/ws", wsHandler.ServeWs(hub))
 
 	log.Println("Listening on port 8081")
 	r.Run(":8081")
