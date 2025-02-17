@@ -28,14 +28,14 @@ type Round struct {
 }
 
 type GameSettings struct {
-	Categories            []enums.GameCategory
-	DrawingTime           int
-	Rounds                int
-	MaxPlayers            int
-	FirstGuessDelay       int
-	ReduceTimeWhenGuessed bool
-	AllowWordReroll       bool
-	Public                bool
+	Categories            []enums.GameCategory `json:"categories"`
+	DrawingTime           int                  `json:"drawingTime"`
+	Rounds                int                  `json:"rounds"`
+	MaxPlayers            int                  `json:"maxPlayers"`
+	FirstGuessDelay       int                  `json:"firstGuessDelay"`
+	ReduceTimeWhenGuessed bool                 `json:"reduceTimeWhenGuessed"`
+	AllowWordReroll       bool                 `json:"allowWordReroll"`
+	Public                bool                 `json:"public"`
 }
 
 var ActiveGames = make(map[string]*Game)
