@@ -1,8 +1,11 @@
 package ws
 
 import (
+	"encoding/json"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/zhi-minn/dota-sketch-backend/internal/models"
+	"github.com/zhi-minn/dota-sketch-backend/internal/services"
 	"log"
 	"net/http"
 	"sync"
@@ -19,6 +22,14 @@ type BroadcastMsg struct {
 	data    []byte
 }
 
+type Hub struct {
+	lobbies    map[string]map[*Client]bool
+	register   chan *Client
+	unregister chan *Client
+	broadcast  chan BroadcastMsg
+	mu         sync.RWMutex
+}
+
 type Client struct {
 	hub     *Hub
 	conn    *websocket.Conn
@@ -26,12 +37,19 @@ type Client struct {
 	send    chan []byte
 }
 
-type Hub struct {
-	lobbies    map[string]map[*Client]bool
-	register   chan *Client
-	unregister chan *Client
-	broadcast  chan BroadcastMsg
-	mu         sync.RWMutex
+type Message struct {
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload"`
+}
+
+type WsHandler struct {
+	gameService *services.GameService
+}
+
+func NewWsHandler(gameService *services.GameService) *WsHandler {
+	return &WsHandler{
+		gameService: gameService,
+	}
 }
 
 func NewHub() *Hub {
@@ -77,7 +95,57 @@ func (h *Hub) Run() {
 	}
 }
 
-func ServeWs(h *Hub) gin.HandlerFunc {
+func (c *Client) readPump(h *Hub) {
+	defer func() {
+		h.unregister <- c
+		c.conn.Close()
+	}()
+
+	for {
+		_, message, err := c.conn.ReadMessage()
+		if err != nil {
+			log.Println("readPump err:", err)
+			break
+		}
+
+		log.Println(message)
+	}
+}
+
+func (c *Client) writePump(h *Hub) {
+	defer c.conn.Close()
+
+	for {
+		msg, ok := <-c.send
+		if !ok {
+			log.Println("Send channel closed, disconnecting client")
+			return
+		}
+
+		if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			log.Println("writePump err:", err)
+			return
+		}
+	}
+}
+
+func processMessage(client *Client, rawMsg []byte) {
+	var msg Message
+	if err := json.Unmarshal(rawMsg, &msg); err != nil {
+		log.Println("Invalid msg:", string(rawMsg))
+		return
+	}
+
+	switch msg.Type {
+	case "DRAW_EVENT":
+	case "WORD_GUESS":
+	case "LOBBY_UPDATE":
+	default:
+		log.Println("Unknown message type:", msg.Type)
+	}
+}
+
+func (gs *WsHandler) ServeWs(h *Hub) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
@@ -85,12 +153,51 @@ func ServeWs(h *Hub) gin.HandlerFunc {
 			return
 		}
 
+		lobbyId := c.Query("lobbyCode")
 		client := &Client{
-			hub:  h,
-			conn: conn,
-			send: make(chan []byte, 256),
+			hub:     h,
+			conn:    conn,
+			lobbyId: lobbyId,
+			send:    make(chan []byte, 256),
 		}
 
 		h.register <- client
+
+		go sendLobbySettings(client)
+
+		go client.readPump(h)
+		go client.writePump(h)
 	}
+}
+
+func sendLobbySettings(c *Client) {
+	lobbyId := c.lobbyId
+
+	models.Mutex.Lock()
+	game, exists := models.ActiveGames[lobbyId]
+	models.Mutex.Unlock()
+
+	if !exists {
+		log.Println("Lobby settings not found", lobbyId)
+		return
+	}
+
+	settingsJSON, err := json.Marshal(game.Settings)
+	if err != nil {
+		log.Println("Error marshalling settings:", err)
+		return
+	}
+
+	message := Message{
+		Type:    "LOBBY_SETTINGS",
+		Payload: settingsJSON,
+	}
+
+	messageJSON, err := json.Marshal(message)
+	if err != nil {
+		log.Println("Error marshalling message:", err)
+		return
+	}
+
+	c.send <- messageJSON
 }
