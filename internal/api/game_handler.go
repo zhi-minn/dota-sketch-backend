@@ -50,12 +50,6 @@ func (h *GameHandler) JoinGame(c *gin.Context) {
 		return
 	}
 
-	_, exists = game.Players[nick]
-	if exists {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Nickname in use"})
-		return
-	}
-
 	playerUid := uuid.New().String()
 	game.Players[playerUid] = &models.Player{
 		Nickname: nick,
